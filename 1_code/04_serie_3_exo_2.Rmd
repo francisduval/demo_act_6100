@@ -1,5 +1,5 @@
 ---
-title: 'Solution Exercice #2, Série 3'
+title: "Solution Exercice #2, Série 3"
 author: "Francis Duval"
 date: "11 février 2020"
 output: pdf_document

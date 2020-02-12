@@ -1,0 +1,253 @@
+---
+title: "Solution Exercice #2, Série 2"
+author: "Francis Duval"
+date: "12/02/2020"
+output: pdf_document
+geometry: left = 8mm, right = 8mm, top = 15mm, bottom = 15mm
+fontsize: 10pt
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = T)
+
+def.chunk.hook <- knitr::knit_hooks$get("chunk")
+  knitr::knit_hooks$set(chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  }
+)
+```
+
+Pour les énoncés des exercices, cliquer sur ce lien: <https://nbviewer.jupyter.org/github/nmeraihi/ACT6100/blob/master/exercices_2.ipynb>
+
+Activer les librairies utiles.
+
+```{r message = FALSE}
+library(here)
+library(tidyverse)
+library(magrittr)
+library(FNN) 
+options(scipen = 999) 
+```
+
+Lire la base de données `credit.csv`.
+
+```{r message = FALSE}
+d <- read_csv(here("0_data", "dataEXO1.csv"))
+```
+
+Pour voir rapidement à quoi ressemble la base de données, on peut utiliser la fonction `glimpse`.
+
+```{r}
+glimpse(d)
+```
+
+## Partie 1
+
+### Nuage de points
+```{r fig.height = 4}
+plot(d$X, d$Y, xlab = "x", ylab = "y", cex = 0.6, pch = 20)
+```
+
+### Ajustement de la droite des moindres carrés
+```{r}
+lin_fit <- lm(Y ~ X, data = d)
+summary(lin_fit)
+```
+
+On voit que les 2 paramètres sont significatifs parce que leur valeur-p est très petite.
+
+### Visualiser l'ajustement sur le nuage de points
+
+```{r fig.height = 4}
+plot(d$X, d$Y, xlab = "x", ylab = "y", cex = 0.6, pch = 20)
+lines(d$X, lin_fit$fitted.values, col = "darkgreen", lw = 1.5)
+```
+
+### Calculer l'erreur quadratique moyenne (EQM), ou mean squared error en anglais (MSE)
+
+```{r}
+mean((d$Y - lin_fit$fitted.values) ^ 2)
+```
+
+## Partie 2
+
+### Ajout de x au carré comme prédicteur
+
+```{r}
+d %<>% mutate(X_2 = X ^ 2) 
+```
+
+### Ajustement du modèle quadratique
+
+```{r}
+quad_fit <- lm(Y ~ X + X_2, data = d)
+summary(quad_fit)
+```
+
+Les valeurs p associées aux paramètres permettent de conclure que X n'est pas une variable significative dans le modèle.
+
+### Visualiser l'ajustement sur le nuage de points
+```{r}
+plot(d$X, d$Y, xlab = "x", ylab = "y", cex = 0.6, pch = 20)
+lines(d$X, lin_fit$fitted.values, col = "darkgreen", lw = 1.5)
+lines(d$X, quad_fit$fitted.values, col = "blue", lw = 1.5)
+legend(
+  "topleft", 
+  legend = c("Modèle linéaire", "Modèle quadratique"), 
+  col = c("darkgreen", "blue"), 
+  lwd = 1.5,
+  bty = "n"
+)
+```
+
+### Calculer l'erreur quadratique moyenne
+
+```{r}
+mean((d$Y - quad_fit$fitted.values) ^ 2) 
+```
+
+## Partie 3
+
+On entraine les modèles pour K = 1, ..., 20 (la fonction map c'est un peu comme lapply, mais meilleur).
+
+```{r}
+knn_fits <- map(
+  1:20, 
+  ~ knn.reg(train = enframe(d$X, name = NULL), test = enframe(d$X, name = NULL), y = d$Y, k = .x)
+)
+```
+
+Enuite, on obtient les prédictions des 20 modèles.
+
+```{r}
+knn_pred <- map(knn_fits, ~ .x$pred)
+```
+
+On calcule le MSE pour chacun des 20 modèles.
+
+```{r}
+(knn_mse <- map_dbl(knn_pred, ~ mean((.x - d$Y) ^ 2))) 
+```
+
+La valeur de K qui minimise le MSE d'entrainement est donc
+```{r}
+(opt_k <- which.min(knn_mse)) 
+```
+
+et son erreur quadratique moyenne est
+```{r}
+knn_mse[which.min(knn_mse)]
+```
+
+On peut ensuite ajouter la fonction de prédiction au graphique.
+
+```{r}
+x_grid <- tibble(X = (seq(min(d$X), max(d$X), length.out = 10000)))
+knn_fit <- knn.reg(train = d["X"], test = x_grid, y = d$Y, k = opt_k)
+
+plot(d$X, d$Y, xlab = "x", ylab = "y", cex = 0.6, pch = 20)
+lines(d$X, lin_fit$fitted.values, col = "darkgreen", lw = 1.5)
+lines(d$X, quad_fit$fitted.values, col = "blue", lw = 1.5)
+lines(x_grid$X, knn_fit$pred, col = "red", lw = 1.5)
+legend(
+  "topleft", 
+  legend = c("Modèle linéaire", "Modèle quadratique", "1-NN"), 
+  col = c("darkgreen", "blue", "red"), 
+  lwd = 1.5,
+  bty = "n"
+)
+```
+
+## Partie 4
+
+On va tout d'abord définir une fonction qui calcule l'EQM avec leave one out cross-validation.
+
+```{r}
+loocv_mse_knn <- function(x_train_vec, y_train_vec, k) {
+  n <- length(x_train_vec)
+  
+  preds <- map_dbl(
+    1:n, 
+    ~ knn.reg(train = x_train_vec[-.x], test = x_train_vec[.x], y = y_train_vec[-.x], k = k)$pred
+  ) 
+  
+  mse <- mean((preds - y_train_vec) ^ 2)
+  return(mse)
+}
+```
+
+On peut ensuite calculer l'EQM LOOCV pour K = 1, ..., 20. 
+
+```{r}
+(knn_loocv_mse <- map_dbl(1:20, ~ loocv_mse_knn(d$X, d$Y, k = .x)))
+```
+
+Finalement, on détermine la valeur optimale de K.
+
+```{r}
+(opt_k_loocv <- which.min(knn_loocv_mse))
+```
+
+On ajoute le modèle au graphique.
+
+```{r}
+knn_fit <- knn.reg(train = d["X"], test = x_grid, y = d$Y, k = opt_k_loocv)
+
+plot(d$X, d$Y, xlab = "x", ylab = "y", cex = 0.6, pch = 20)
+lines(d$X, lin_fit$fitted.values, col = "darkgreen", lw = 1.5)
+lines(d$X, quad_fit$fitted.values, col = "blue", lw = 1.5)
+lines(x_grid$X, knn_fit$pred, col = "red", lw = 1.5)
+legend(
+  "topleft", 
+  legend = c("Modèle linéaire", "Modèle quadratique", "10-NN"), 
+  col = c("darkgreen", "blue", "red"), 
+  lwd = 1.5,
+  bty = "n"
+)
+```
+
+L'erreur quadratique moyenne LOOCV associée à ce modèle est
+
+```{r}
+knn_loocv_mse[which.min(knn_loocv_mse)]
+```
+
+## Partie 5
+
+```{r}
+x0 <- 333.2522
+y0 <- 99508.44
+newdata <- tibble(X = x0, X_2 = x0 ^ 2)
+```
+
+### Modèle linéaire
+
+```{r}
+(y_hat_lin_fit <- predict(lin_fit, type = "response", newdata = newdata) %>% as.numeric()) # Prédiction
+(y_hat_lin_fit - y0) ^ 2 # Erreur quadratique de prédiction
+```
+
+###  Modèle quadratique
+
+```{r}
+(y_hat_quad_fit <- predict(quad_fit, type = "response", newdata = newdata) %>% as.numeric()) # Prédiction
+(y_hat_quad_fit - y0) ^ 2 # Erreur quadratique de prédiction
+
+```
+
+###  1-NN
+
+```{r}
+y_hat_1_nn <- knn.reg(train = d$X, test = x0, y = d$Y, k = 1)$pred # Prédiction
+(y_hat_1_nn - y0) ^ 2 # Erreur quadratique de prédiction
+```
+
+###  10-NN
+
+```{r}
+y_hat_10_nn <- knn.reg(train = d$X, test = x0, y = d$Y, k = 10)$pred # Prédiction
+(y_hat_10_nn - y0) ^ 2 # Erreur quadratique de prédiction
+```
+
+On remarque que le modèle des plus proches voisins avec K = 1 produit une erreur quadratique de prédiction très élevée et que le modèle optimal (K = 10) est celui dont l'erreur quadratique de prédiction est la plus faible.

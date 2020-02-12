@@ -1,0 +1,74 @@
+---
+title: "Solution Exercice #8c, Série 1"
+author: "Francis Duval"
+date: "12/02/2020"
+output: pdf_document
+geometry: left = 8mm, right = 8mm, top = 15mm, bottom = 15mm
+fontsize: 10pt
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = T)
+
+def.chunk.hook <- knitr::knit_hooks$get("chunk")
+  knitr::knit_hooks$set(chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  }
+)
+```
+
+Pour les énoncés des exercices, cliquer sur ce lien: <https://nbviewer.jupyter.org/github/nmeraihi/ACT6100/blob/master/exercices_1.ipynb>
+
+Activer les librairies utiles.
+
+```{r message = FALSE}
+library(ISLR)
+```
+
+# i)
+
+```{r}
+summary(College)
+```
+
+# ii)
+
+```{r}
+pairs(College[ , 1:10])
+```
+
+# iii)
+
+```{r}
+plot(College$Private, College$Outstate, xlab = "Private?", ylab = "Outstate")
+```
+
+# iv)
+
+```{r}
+Elite <- rep("No", nrow(College))
+Elite[College$Top10perc > 50] <- "Yes"
+Elite <- as.factor(Elite)
+College <- data.frame(College, Elite)
+
+summary(College$Elite)
+plot(College$Elite, College$Outstate, xlab = "Elite?", ylab = "Outstate")
+```
+
+# v)
+
+```{r}
+str(College)
+
+par(mfrow = c(2, 2))
+hist(College$Apps, breaks = 10, main = "10 intervalles")
+hist(College$Apps, breaks = 20, main = "20 intervalles")
+hist(College$Apps, breaks = 50, main = "50 intervalles")
+hist(College$Apps, breaks = 100, main = "100 intervalles")
+
+hist(College$Top10perc, breaks = 10, main = "10 intervalles")
+hist(College$Top10perc, breaks = 20, main = "20 intervalles")
+hist(College$Top10perc, breaks = 50, main = "50 intervalles")
+hist(College$Top10perc, breaks = 100, main = "100 intervalles")
+```
