@@ -1,0 +1,93 @@
+---
+title: "Solution Exercice #2, Série 3"
+author: "Francis Duval"
+date: "11 février 2020"
+output: html_document
+---
+
+<style>
+    body .main-container {
+        max-width: 1200px;
+    }
+</style>
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = T, tidy = T)
+```
+
+Pour les énoncés des exercices, cliquer sur ce lien: <https://nbviewer.jupyter.org/github/nmeraihi/ACT6100/blob/master/exercices_3.ipynb>
+
+Activer les librairies utiles.
+
+```{r message = FALSE}
+library(here)
+library(tidyverse)
+library(magrittr)
+library(RcmdrMisc)
+```
+
+
+Lire la base de données `credit.csv`.
+
+```{r message = FALSE}
+credit <- read_delim(here("0_data", "credit.csv"), delim = ";")
+```
+
+Pour voir rapidement à quoi ressemble la base de données, on peut utiliser la fonction `glimpse`.
+
+```{r}
+glimpse(credit)
+```
+
+## Partie 1
+
+La régression logistique est mieux adaptée que la régression linéaire car nous faisons face à un problème de classification (en fait, la régression logistique a un nom trompeur: elle devrait plutôt s'appeler la classification logisitque). En effet, la variable que nous essayons de prédire est la variable `Statut`, qui est catégorielle puisqu'elle ne peut prendre que les valeurs 0 ou 1. Le but est d'estimer pour chaque observation la probabilité que la variable `Statut` prenne la valeur 1. Or, si on utilisait la régression linéaire, on risquerait de se retrouver avec des probabilités inférieures à 0 ou supérieures à 1, ce qui n'a pas de sens.
+
+## Partie 2
+
+Premièrement, il faut arranger un peu la base de données. On remarque que la variable `Tendett` est une variable de type « chaine de caractères », mais devrait plutôt être une variable numérique. Il faut donc la convertir en variable numérique. Deuxièmement, les variables `Prof` et `Genre` sont numériques, mais devraient plutôt être catégorielle. On va changer ça aussi.
+
+```{r}
+credit %<>%
+  mutate(
+    Tendett = as.numeric(str_replace(Tendett, ",", ".")),
+    Prof = factor(Prof),
+    Genre = factor(Genre)
+  )
+```
+
+
+Maintenant, tout est comme on veut:
+
+```{r}
+glimpse(credit)
+```
+
+On peut maintenant ajuster la régression logistique avec toutes les variables. Le modèle complet est celui qui estime la probabilité que la variable `Statut` prenne la valeur 1 à l'aide de toutes les autres variables.
+
+```{r}
+glm_logit_fit <- glm(Statut ~ ., family = binomial(link = "logit"), data = credit)
+summary(glm_logit_fit)
+```
+
+On utilise une méthode de sélection de variables de type « backward » avec le BIC comme critère.
+
+```{r}
+summary(stepwise(glm_logit_fit, direction = "backward", criterion = "BIC", trace = F))
+```
+
+Le modèle final est donc celui qui estime la probabilité que la variable `Statut` prenne la valeur 1 à l'aide des variables `Age`, `Revenu`, `Tendett`, `Nexp` et `Genre`.
+
+## Partie 3
+
+Oui, c'est toujours possible de retirer une variable d'un modèle. Est-ce que c'est souhaitable? Probablement que oui, parce que comme le montrent les résultats du modèle complet, le paramètre relié à la profession dans le secteur public (`Prof4`) n'est pas significativement différent de zéro.
+
+## Partie 4
+
+Oui, c'est toujours possible de retirer l'ordonnée à l'origine d'un modèle. Est-ce que c'est souhaitable? Probablement que oui, parce que comme le montrent les résultats, le paramètre relié à l'ordonnée à l'origine n'est pas significativement différent de zéro.
+
+## Partie 5
+
+À venir
+
+## Partie 6
