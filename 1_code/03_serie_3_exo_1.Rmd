@@ -2,17 +2,21 @@
 title: "Solution Exercice #1, Série 3"
 author: "Francis Duval"
 date: "11 février 2020"
-output: html_document
+output: pdf_document
+geometry: left = 8mm, right = 8mm, top = 15mm, bottom = 15mm
+fontsize: 10pt
 ---
-
-<style>
-    body .main-container {
-        max-width: 1200px;
-    }
-</style>
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(echo = T, tidy = T)
+
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(
+  chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  }
+)
 ```
 
 Pour les énoncés des exercices, cliquer sur ce lien: <https://nbviewer.jupyter.org/github/nmeraihi/ACT6100/blob/master/exercices_3.ipynb>
@@ -44,7 +48,9 @@ glimpse(swmotorcycle)
 Premièrement, on va regarder combien de valeurs manquantes ont chacune des variables `OwnerAge`, `Exposure` et `ClaimNb` (parce que pour ajuster un GLM, aucune valeur ne doit être manquante).
 
 ```{r}
-swmotorcycle %>% select(ClaimNb, Exposure, OwnerAge) %>% map(~ sum(is.na(.)))
+swmotorcycle %>% 
+  select(ClaimNb, Exposure, OwnerAge) %>% 
+  map(~ sum(is.na(.)))
 ```
 
 Parfait, aucune valeur n'est manquante. Cependant, on peut remarquer que la variable `Exposure` prend quelquefois la valeur zéro.
@@ -69,7 +75,8 @@ table(swmotorcycle$OwnerAge)
 Par exemple, 1 assuré a 0 an, 1 assuré a 4 ans, 2 assurés ont 5 ans, etc. On va supposer qu'un assuré ne peut avoir que 16 ans ou plus, donc on va supprimer les contrats avec des assurés de 15 ans ou moins (avec la fonction `dplyr::filter`).
 
 ```{r}
-data_glm %<>% filter(OwnerAge > 15) 
+data_glm %<>% 
+  filter(OwnerAge > 15) 
 ```
 
 On va aussi seulement garder les variables utiles pour la modélisation (avec la fonction `dplyr::select`).
@@ -82,7 +89,13 @@ data_glm %<>%
 On ajuste ensuite un GLM Poisson avec fonction de lien logarithmique et avec la variable `Exposure` en offset.
 
 ```{r}
-glm_pois_fit <- glm(ClaimNb ~ OwnerAge + offset(log(Exposure)),family = poisson(link = "log"), data = data_glm)
+glm_pois_fit <- glm(
+  ClaimNb ~ OwnerAge, 
+  family = poisson(link = "log"), 
+  offset = log(Exposure),
+  data = data_glm
+)
+
 summary(glm_pois_fit)
 ```
 
@@ -94,19 +107,19 @@ coef(glm_pois_fit)
 
 ## Partie 2
 
-Pour déterminer la valeur optimale de K sans validation croisée, on pourrait par exemple essayer toutes les valeurs possibles de K, calculer l'AIC pour toutes ces valeurs et garder la valeur de K qui minimise l'AIC. Observons premièrement quelles valeurs la variable `OwnerAge` peut prendre, ainsi que le nombre de valeurs possibles.
+Pour déterminer la valeur optimale de K sans validation croisée, on pourrait par exemple essayer toutes les valeurs possibles de K, calculer l'erreur quadratique moyenne (EQM) pour toutes ces valeurs et garder la valeur de K qui minimise l'EQM. Observons premièrement quelles valeurs la variable `OwnerAge` peut prendre, ainsi que le nombre de valeurs possibles.
 
 ```{r}
 unique(data_glm$OwnerAge)
 length(unique(data_glm$OwnerAge))
 ```
 
-On voit que la variable `OwnerAge` peut prendre `r length(unique(data_glm$OwnerAge))` valeurs différentes, soient `r min(data_glm$OwnerAge)`, ..., `r max(data_glm$OwnerAge)`. Il y a donc `r length(unique(data_glm$OwnerAge)) - 1` manières de séparer la variable `OwnerAge` en 2 catégories (K = `r min(data_glm$OwnerAge)`, ..., `r max(data_glm$OwnerAge) -1`). Cependant, puisque la valeur `OwnerAge` ne prend pas souvent des valeurs en haut de 75, on n'essayera pas ces valeurs. On va donc se créer 59 bases de données (avec chacune une valeur de K différente), ajuster un GLM Poisson sur chacune, calculer l'AIC pour chaque modèle et finalement, choisir la valeur de K qui mène au plus petit AIC.
+On voit que la variable `OwnerAge` peut prendre `r length(unique(data_glm$OwnerAge))` valeurs différentes, soient `r min(data_glm$OwnerAge)`, ..., `r max(data_glm$OwnerAge)`. Il y a donc `r length(unique(data_glm$OwnerAge)) - 1` manières de séparer la variable `OwnerAge` en 2 catégories (K = `r min(data_glm$OwnerAge)`, ..., `r max(data_glm$OwnerAge) -1`). Cependant, puisque la valeur `OwnerAge` ne prend pas souvent des valeurs en haut de 75, on n'essayera pas ces valeurs. On va donc se créer 59 bases de données (avec chacune une valeur de K différente), ajuster un GLM Poisson sur chacune, calculer l'EQM pour chaque modèle et finalement, choisir la valeur de K qui mène à la plus petite EQM.
 
 On commence par créer les `r length(unique(data_glm$OwnerAge)) - 1` bases de données, qu'on va stocker dans la liste `data_glm_ls`.
 
 ```{r}
-# Fonction qui renvoie la base de données data_glm mais avec une variable age catégorielle à 2 classes (spécifier valeur k)
+# Fonction qui ajoute une variable age catégorielle à 2 classes (spécifier valeur k)
 creer_variable_age_2_classes <- function(k) {
   data_glm %>% 
     mutate(
@@ -117,7 +130,7 @@ creer_variable_age_2_classes <- function(k) {
 # Obtenir toutes les valeurs de k possibles
 (valeurs_k <- head(unique(data_glm$OwnerAge), -14))
 
-# Obtenir une liste avec les 72 bases de données
+# Obtenir une liste avec les 59 bases de données
 data_glm_ls <- map(valeurs_k, creer_variable_age_2_classes)
 ```
 
@@ -132,21 +145,21 @@ Ensuite on ajuste un GLM Poisson sur chacune des bases de données de cette list
 ```{r}
 glm_pois_fit_ls <- map(
   data_glm_ls, 
-  ~ glm(ClaimNb ~ OwnerAge_2_classes + offset(log(Exposure)), family = poisson(link = "log"), data = .x)
+  ~ glm(ClaimNb ~ OwnerAge_2_classes, family = poisson(link = "log"), offset = log(Exposure), data = .x)
 )
 ```
 
-Ensuite on calcule l'AIC pour chacun des modèles
+Ensuite on calcule l'EQM pour chacun des modèles
 
 ```{r}
-(AIC_vec <- map_dbl(glm_pois_fit_ls, AIC))
+(eqm_vec <- map_dbl(glm_pois_fit_ls, ~ mean((.x$fitted.values - .x$y) ^ 2)))
 ```
 
 ```{r}
-(k_opt_AIC <- valeurs_k[which.min(AIC_vec)])
+(k_opt_eqm <- valeurs_k[which.min(eqm_vec)])
 ```
 
-La valeur optimale est K = `r k_opt_AIC` selon l'AIC. Voici le code pour obtenir la fréquence espérée de chacune des 2 classes de risque (30 ans ou moins et plus de 30 ans):
+La valeur optimale est K = `r k_opt_eqm` selon l'EQM Voici le code pour obtenir la fréquence espérée de chacune des 2 classes de risque (30 ans ou moins et plus de 30 ans):
 
 ```{r}
 new_data <- tibble(
@@ -155,10 +168,15 @@ new_data <- tibble(
 )
 
 new_data %>%
-  mutate(frequence_esperee = round(predict(glm_pois_fit_ls[[which.min(AIC_vec)]], newdata = ., type = "response"), 4))
+  mutate(
+    frequence_esperee = round(
+      predict(glm_pois_fit_ls[[which.min(eqm_vec)]], newdata = ., type = "response"), 
+      digits = 4
+    )
+  )
 ```
 
-Maintenant, on va déterminer la valeur optimale de K, mais avec la validation croisée. On va premièrement créer une fonction qui prend en entrée une base de données et qui retourne l'erreur quadratique moyenne de validation croisée avec 12 "folds".
+Maintenant, on va déterminer la valeur optimale de K, mais avec la validation croisée. On va premièrement créer une fonction qui prend en entrée une base de données et qui retourne l'EQM de validation croisée avec 12 "folds".
 
 ```{r}
 # Définir une fonction qui prend en entrée un nombre n et renvoie 12 "folds" de taille égale
@@ -170,15 +188,26 @@ create_folds <- function(n, theseed = 2020) {
     factor()
 }
 
-# Définir une fonction qui prend en entrée une base de données et renvoie l'erreur quadratique moyenne de validation croisée
+# Fonction qui prend en entrée une base de données et renvoie l'eqm de validation croisée
 cv_12_folds_mse_glm_poisson <- function(data) {
   data %<>% mutate(fold = create_folds(nrow(.)))
   responses_ls <- data %>% group_split(fold) %>% map(~ pull(., ClaimNb))
+  
   models_ls <- map(
     1:12, 
-    ~ glm(ClaimNb ~ OwnerAge_2_classes + offset(log(Exposure)), family = poisson(link = "log"), data = filter(data, fold != .))
+    ~ glm(
+        ClaimNb ~ OwnerAge_2_classes, 
+        family = poisson(link = "log"),
+        offset = log(Exposure),
+        data = filter(data, fold != .)
+      )
   )
-  predictions_ls <- map(1:12, ~ predict(models_ls[[.]], newdata = filter(data, fold == .), type = "response"))
+  
+  predictions_ls <- map(
+    1:12, 
+    ~ predict(models_ls[[.]], newdata = filter(data, fold == .), type = "response")
+  )
+  
   res <- map2(responses_ls, predictions_ls, ~ mean((.x - .y) ^ 2)) %>% flatten_dbl() %>% mean()
   return(res)
 }
@@ -200,8 +229,9 @@ On rajuste un GLM Poisson avec la valeur optimale de K sur la base de données c
 
 ```{r}
 glm_pois_fit_opt_k_eqm <- glm(
-  ClaimNb ~ OwnerAge_2_classes + offset(log(Exposure)), 
-  family = poisson(link = "log"), 
+  ClaimNb ~ OwnerAge_2_classes, 
+  family = poisson(link = "log"),
+  offset = log(Exposure),
   data = data_glm_ls[[which.min(eqm_vec)]]
 )
 
@@ -211,5 +241,7 @@ new_data_eqm <- tibble(
 )
 
 new_data_eqm %>%
-  mutate(frequence_esperee = round(predict(glm_pois_fit_opt_k_eqm, newdata = ., type = "response"), 4))
+  mutate(
+    frequence_esperee = round(predict(glm_pois_fit_opt_k_eqm, newdata = ., type = "response"), 4)
+  )
 ```
