@@ -1,0 +1,199 @@
+---
+title: "Solution Exercice #3, Série 5"
+author: "Francis Duval"
+date: "18 février 2020"
+output: pdf_document
+geometry: left = 8mm, right = 8mm, top = 15mm, bottom = 15mm
+fontsize: 10pt
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = T, tidy = F)
+
+def.chunk.hook <- knitr::knit_hooks$get("chunk")
+  knitr::knit_hooks$set(chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  }
+)
+```
+
+Activer les librairies utiles.
+
+```{r message = FALSE}
+library(here)
+library(tidyverse)
+library(glue)
+library(magrittr)
+library(glmnet)
+```
+
+Lire la base de données `credit.csv`.
+
+```{r message = FALSE}
+credit <- load(here("0_data", "freMPL3.rda"))
+```
+
+## a)
+
+```{r}
+data <- freMPL3 %>% filter(ClaimAmount > 0)
+```
+
+## b)
+
+```{r}
+gamma_fit <- glm(
+  ClaimAmount ~ LicAge + VehAge + Gender + MariStat + SocioCateg + DrivAge, 
+  family = Gamma(link = "log"), 
+  data = data, 
+  offset = log(Exposure)
+)
+
+summary(gamma_fit)
+```
+
+### i)
+
+```{r}
+assure_df <- tibble(
+  LicAge = 400,
+  VehAge = factor(3),
+  Gender = factor("Male"),
+  MariStat = factor("Alone"),
+  SocioCateg = factor("CSP50"),
+  DrivAge = 45,
+  Exposure = 1
+)
+
+as.numeric(predict(gamma_fit, newdata = assure_df, type = "response"))
+```
+
+### ii)
+
+Cette affirmation est fort probablement fausse puisque la valeur-p associée au paramètre `DrivAge` est trop élevée.
+
+## c)
+
+Premièrement, créer une base de données avec seulement les variables `Exposure`, `ClaimAmount` et `DrivAge`.
+
+```{r}
+data_drv_age <- data %>% select(ClaimAmount, Exposure, DrivAge)
+```
+
+### i)
+
+Créer une fonction qui prend en entrée la base `df` et qui renvoie la même base de données avec les `k` puissances de la variable `var`.
+
+```{r}
+ajout_puissances <- function(df, var, k) {
+  if (k == 1) {
+    return(df)
+  }
+  
+  new_vars <- map_dfc(2:k, ~ df[[var]] ^ .x) %>% 
+    setNames(glue("{var}_{2:k}"))
+  
+  res <- bind_cols(df, new_vars)
+  return(res)
+}
+```
+
+Ajuster le GLM gamma pour K = 1, ..., 10.
+
+```{r}
+data_drv_age_ls <- map(1:10, ~ ajout_puissances(df = data_drv_age, var = "DrivAge", k = .x))
+
+gamma_fit_ls <- map(
+  data_drv_age_ls,
+  ~ glm(ClaimAmount ~ ., family = Gamma(link = "log"), data = .x, offset = log(Exposure))
+)
+```
+
+Calculer l'AIC pour chaque modèle ajuster et choisir K tel que l'AIC est le plus petit.
+
+```{r}
+(AICs <- map_dbl(gamma_fit_ls, AIC))
+which.min(AICs)
+```
+
+Avec le critère AIC, on choisit donc K = `r which.min(AICs)`.
+
+### ii)
+
+Premièrement, créer une fonction qui prend en entrée la base de données, la variable explicative et le nombre de puissances k et renvoie l'erreur quadratique moyenne de validation croisée.
+
+```{r}
+mse_2_folds_gamma <- function(df, var, k) {
+  dat <- ajout_puissances(df, var, k)
+  
+  folds <-  seq(1, nrow(dat)) %>%
+      cut(breaks = 2, labels = F) %>% 
+      sample()
+  
+  responses_ls <- dat %>%
+    mutate(folds = folds) %>% 
+    group_split(folds) %>% 
+    map(~ pull(., ClaimAmount))
+  
+  gamma_fit_ls <- map(
+    1:2, 
+    ~ glm(ClaimAmount ~ ., family = Gamma(link = "log"), data = dat[folds != .x, ], offset = log(Exposure))
+  )
+  
+  predictions_ls <- map(1:2, ~ predict(gamma_fit_ls[[.x]], newdata = dat[folds == .x, ], type = "response"))
+  
+  res <- map2(responses_ls, predictions_ls, ~ mean((.x - .y) ^ 2)) %>% 
+    flatten_dbl() %>% 
+    mean()
+  
+  return(res)
+}
+```
+
+Ensuite, ajuster les modèles pour K = 1, ..., 10 et regarder quelle valeur mène à la plus petite erreur quadratique moyenne.
+
+```{r}
+(MSEs <- map_dbl(1:10, ~ mse_2_folds_gamma(data_drv_age, var = "DrivAge", k = .x)))
+which.min(MSEs)
+```
+
+Avec le critère de l'erreur quadratique moyenne de 2-validation croisée, on choisit donc K = `r which.min(MSEs)`.
+
+## d)
+
+```{r}
+
+ridge_cv <- cv.glmnet(
+  x = as.matrix(data[c("DrivAge", "LicAge")]), 
+  y = as.matrix(data["ClaimAmount"]), 
+  nfolds = 10, 
+  alpha = 0, 
+  family = "poisson", 
+  offset = log(as.matrix(data["Exposure"]))
+)
+
+coef(ridge_cv)
+ridge_cv$lambda.min
+```
+
+La valeur de lambda sélectionnée est `r ridge_cv$lambda.min`.
+
+## e)
+
+```{r}
+ridge_cv_2 <- cv.glmnet(
+  x = model.matrix(~ VehUsage - 1, data = data), 
+  y = as.matrix(data["ClaimAmount"]), 
+  nfolds = 20, 
+  alpha = 0, 
+  family = "poisson", 
+  offset = log(as.matrix(data["Exposure"]))
+)
+```
+
+Les valeurs des paramètres obtenus sont:
+
+```{r}
+coef(ridge_cv_2)
+```
